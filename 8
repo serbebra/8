@@ -1,0 +1,98 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract DAO {
+    // Структура для хранения информации о членах DAO
+    struct Member {
+        address addr;
+        uint256 shares;
+        bool active;
+    }
+
+    // Перечисление для статусов предложений
+    enum ProposalStatus { Pending, Approved, Rejected }
+
+    // Структура для предложений
+    struct Proposal {
+        address proposer;
+        string description;
+        uint256 votesFor;
+        uint256 votesAgainst;
+        ProposalStatus status;
+    }
+
+    // Переменные состояния DAO
+    address public owner;
+    mapping(address => Member) public members;
+    Proposal[] public proposals;
+
+    // События
+    event MembershipChanged(address indexed member, bool active);
+    event ProposalSubmitted(address indexed proposer, uint256 indexed proposalId);
+    event VoteCasted(address indexed voter, uint256 indexed proposalId, bool inSupport);
+    event ProposalFinalized(uint256 indexed proposalId, ProposalStatus status);
+
+    // Модификаторы
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner can call this function");
+        _;
+    }
+
+    modifier onlyMember() {
+        require(members[msg.sender].active, "Only active members can call this function");
+        _;
+    }
+
+    // Конструктор контракта
+    constructor() {
+        owner = msg.sender;
+        members[msg.sender] = Member(msg.sender, 100, true);
+    }
+
+    // Метод для добавления нового члена
+    function addMember(address _member) external onlyOwner {
+        require(!members[_member].active, "Member already exists");
+        members[_member] = Member(_member, 100, true);
+        emit MembershipChanged(_member, true);
+    }
+
+    // Метод для удаления члена
+    function removeMember(address _member) external onlyOwner {
+        require(members[_member].active, "Member does not exist");
+        members[_member].active = false;
+        emit MembershipChanged(_member, false);
+    }
+
+    // Метод для предложения новой инициативы
+    function submitProposal(string memory _description) external onlyMember {
+        uint256 proposalId = proposals.length;
+        proposals.push(Proposal(msg.sender, _description, 0, 0, ProposalStatus.Pending));
+        emit ProposalSubmitted(msg.sender, proposalId);
+    }
+
+    // Метод для голосования за предложение
+    function vote(uint256 _proposalId, bool _inSupport) external onlyMember {
+        require(proposals[_proposalId].status == ProposalStatus.Pending, "Proposal not pending");
+        Proposal storage proposal = proposals[_proposalId];
+        Member storage member = members[msg.sender];
+        if (_inSupport) {
+            proposal.votesFor += member.shares;
+        } else {
+            proposal.votesAgainst += member.shares;
+        }
+        emit VoteCasted(msg.sender, _proposalId, _inSupport);
+    }
+
+    // Метод для окончания голосования и принятия решения по предложению
+    function finalizeProposal(uint256 _proposalId) external onlyOwner {
+        Proposal storage proposal = proposals[_proposalId];
+        require(proposal.status == ProposalStatus.Pending, "Proposal already finalized");
+        uint256 totalVotes = proposal.votesFor + proposal.votesAgainst;
+        if (totalVotes == 0 || proposal.votesFor > proposal.votesAgainst) {
+            proposal.status = ProposalStatus.Approved;
+        } else {
+            proposal.status = ProposalStatus.Rejected;
+        }
+        emit ProposalFinalized(_proposalId, proposal.status);
+    }
+}
